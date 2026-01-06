@@ -208,7 +208,10 @@ io.on('connection', (socket) => {
     // --- Chat Events ---
     socket.on('chatMessage', ({ roomId, message }) => {
         const room = rooms[roomId];
-        if (!room) return;
+        if (!room) {
+            socket.emit('error', '部屋が存在しません(再接続してください)');
+            return;
+        }
 
         const player = room.players.find(p => p.id === socket.id);
         if (!player) return;
@@ -387,10 +390,20 @@ function nextWord(roomId) {
     if (room.settings.courses.includes('normal')) candidateList.push(...wordLists.normal);
     if (room.settings.courses.includes('hard')) candidateList.push(...wordLists.hard);
 
-    if (candidateList.length === 0) candidateList = wordLists.normal;
+    // Fallback if all lists are empty (e.g. file load error)
+    if (candidateList.length === 0) {
+        candidateList = [{ text: "Error", kana: ["え", "ら", "ー"] }];
+    }
 
     const randomWord = candidateList[Math.floor(Math.random() * candidateList.length)];
-    room.currentWord = randomWord;
+    // Double check randomWord validity
+    if (!randomWord || !randomWord.kana) {
+        console.error("Invalid word selected:", randomWord);
+        // Emergency fallback
+        room.currentWord = { text: "Error", kana: ["え", "ら", "ー"] };
+    } else {
+        room.currentWord = randomWord;
+    }
 
     // Handicap Calculation
     // Only applies if Handicap Setting is ON
@@ -401,13 +414,13 @@ function nextWord(roomId) {
 
         // Calculate delay for each player
         // Estimated keys needed ~ word text length * 1.7 (kana avg) or use actual kana length
-        const charLen = randomWord.kana.length; // Approximate
+        const charLen = room.currentWord.kana.length; // Approximate
 
         room.players.forEach(p => {
             const playerKpm = p.kpm || 100; // default assumption if 0
             if (playerKpm < 1) { // Not played yet 
                 // No handicap for initial round or slow players
-                io.to(p.id).emit('newWord', { word: randomWord, delay: 0 });
+                io.to(p.id).emit('newWord', { word: room.currentWord, delay: 0 });
             } else {
                 // Let's find SLOWEST player.
                 let minKpm = 9999;
@@ -431,14 +444,14 @@ function nextWord(roomId) {
 
                     const delay = Math.max(0, Math.min(5000, slowTimeMs - fastTimeMs));
 
-                    io.to(p.id).emit('newWord', { word: randomWord, delay: delay });
+                    io.to(p.id).emit('newWord', { word: room.currentWord, delay: delay });
                 } else {
-                    io.to(p.id).emit('newWord', { word: randomWord, delay: 0 });
+                    io.to(p.id).emit('newWord', { word: room.currentWord, delay: 0 });
                 }
             }
         });
     } else {
-        io.to(roomId).emit('newWord', { word: randomWord, delay: 0 });
+        io.to(roomId).emit('newWord', { word: room.currentWord, delay: 0 });
     }
 }
 
