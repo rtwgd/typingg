@@ -48,13 +48,28 @@ const ui = {
         returnLobby: document.getElementById('btnReturnLobby'),
         exitGame: document.getElementById('btnExitGame'),
         leaveLobby: document.getElementById('btnLeaveLobby')
-    }
+    },
+    // Chat Elements
+    chatMessages: document.getElementById('chatMessages'),
+    chatInput: document.getElementById('chatInput'),
+    btnSendChat: document.getElementById('btnSendChat'),
+    // Result Elements
+    resultList: document.getElementById('resultList')
 };
 
 // --- Helper Functions ---
 function showScreen(name) {
     Object.values(screens).forEach(s => s.classList.remove('active'));
     screens[name].classList.add('active');
+
+    // Auto-scroll chat if entering lobby
+    if (name === 'lobby') {
+        scrollToBottom();
+    }
+}
+
+function scrollToBottom() {
+    ui.chatMessages.scrollTop = ui.chatMessages.scrollHeight;
 }
 
 function showToast(msg) {
@@ -234,9 +249,12 @@ class TypingEngine {
         this.currentIndex = 0;
         this.currentTyped = "";
         this.completedString = "";
-        this.startTime = Date.now();
+        this.startTime = 0; // Set on first key or word start? Usually word start for Total Time
+        this.wordStartTime = Date.now();
         this.charCount = 0;
         this.firstKeyTime = 0;
+        this.totalKeystrokes = 0;
+        this.correctKeystrokes = 0;
     }
 
     setWord(kanaList, delay) {
@@ -244,27 +262,10 @@ class TypingEngine {
         this.kanaParts = this.normalizeKana(kanaList);
         this.updateDisplay();
         this.inputEnabledTime = Date.now() + (delay || 0);
+        this.wordStartTime = Date.now(); // Reset start time
     }
 
-    normalizeKana(originalKanaList) {
-        const rawString = originalKanaList.join('');
-        const parts = [];
-        let i = 0;
-        while (i < rawString.length) {
-            if (i + 1 < rawString.length) {
-                const two = rawString.substring(i, i + 2);
-                if (kanaToRomaji[two]) {
-                    parts.push(two);
-                    i += 2;
-                    continue;
-                }
-            }
-            const one = rawString.substring(i, i + 1);
-            parts.push(one);
-            i++;
-        }
-        return parts;
-    }
+    // ... normalizeKana ... 
 
     handleInput(key) {
         if (Date.now() < this.inputEnabledTime) return false;
@@ -276,29 +277,30 @@ class TypingEngine {
             if (this.reactionTimes.length > 5) this.reactionTimes.shift();
         }
 
+        this.totalKeystrokes++;
+
         if (this.currentIndex >= this.kanaParts.length) return false;
 
         const targetKana = this.kanaParts[this.currentIndex];
         let patterns = kanaToRomaji[targetKana] || [targetKana];
 
+        // ... double consonant logic ...
         // "っ" implicit double consonant logic fix for 'jji', 'zzi' etc.
         if (targetKana === 'っ' && this.currentIndex + 1 < this.kanaParts.length) {
             const nextKana = this.kanaParts[this.currentIndex + 1];
             const nextPatterns = kanaToRomaji[nextKana];
             if (nextPatterns && nextPatterns.length > 0) {
-                // Collect ALL first chars of valid next patterns
                 const nextChars = new Set();
                 nextPatterns.forEach(p => {
                     if (p.length > 0) nextChars.add(p[0]);
                 });
-                // Add all possible double consonants
                 patterns = [...patterns, ...nextChars];
             }
         }
 
         let nextInput = this.currentTyped + key;
 
-        // "ん" implicit completion logic
+        // ... "ん" completion logic ...
         if (targetKana === 'ん' && this.currentTyped === 'n' && key !== 'n' && key !== "'") {
             const matches = patterns.some(p => p.startsWith(nextInput));
             if (!matches) {
@@ -307,6 +309,9 @@ class TypingEngine {
                 this.currentTyped = "";
                 this.updateDisplay();
                 this.charCount++;
+                this.correctKeystrokes++; // Implicit 'n' counts as correct? Or just the key that triggered it?
+                // Actually the key triggered next char, so let's just count this logic as valid.
+                // We will re-evaluate the key against new target below
 
                 if (this.currentIndex < this.kanaParts.length) {
                     return this.handleInput(key);
@@ -319,13 +324,13 @@ class TypingEngine {
 
         if (validPattern) {
             this.currentTyped = nextInput;
+            this.correctKeystrokes++;
 
             if (validPattern === this.currentTyped) {
                 this.completedString += this.currentTyped;
                 this.currentTyped = "";
                 this.currentIndex++;
                 this.charCount += validPattern.length; // Count actual keys
-                // Not perfectly accurate if user backtrack or multi-match, but approx OK for speed calc
                 this.updateDisplay();
 
             } else {
@@ -339,17 +344,25 @@ class TypingEngine {
             socket.emit('reportProgress', { roomId: currentRoomId, progress: pct });
 
             if (this.currentIndex >= this.kanaParts.length) {
-                const timeTaken = (Date.now() - this.startTime) / 1000;
+                const now = Date.now();
+                const timeTaken = (now - this.wordStartTime) / 1000;
+                // True Time: Time from first keypress to finish
+                const trueTime = (this.firstKeyTime > 0) ? (now - this.firstKeyTime) / 1000 : timeTaken;
 
-                // Calculate average reaction time
-                const sum = this.reactionTimes.reduce((a, b) => a + b, 0);
-                const avgReactionTime = this.reactionTimes.length ? (sum / this.reactionTimes.length) : 500;
+                // Calculate average reaction time for this word? No, just report this word's reaction
+                const currentReaction = (this.firstKeyTime > 0) ? (this.firstKeyTime - this.inputEnabledTime) : 0;
+
+                // For average tracking in class
+                // We actually report raw for server to average
 
                 socket.emit('wordCompleted', {
                     roomId: currentRoomId,
                     timeTaken,
                     charCount: this.charCount,
-                    reactionTime: avgReactionTime
+                    reactionTime: Math.max(0, currentReaction),
+                    trueTime: Math.max(0.001, trueTime), // Avoid divide by zero
+                    totalKeystrokes: this.totalKeystrokes,
+                    correctKeystrokes: this.correctKeystrokes
                 });
                 return 'completed';
             }
@@ -360,10 +373,19 @@ class TypingEngine {
     }
 
     getCurrentStats() {
+        // Partial stats for round end when not winner
+        const now = Date.now();
+        const timeTaken = (now - this.wordStartTime) / 1000;
+        const trueTime = (this.firstKeyTime > 0) ? (now - this.firstKeyTime) / 1000 : timeTaken;
+        const currentReaction = (this.firstKeyTime > 0) ? (this.firstKeyTime - this.inputEnabledTime) : 0;
+
         return {
-            timeTaken: (Date.now() - this.startTime) / 1000,
+            timeTaken,
             charCount: this.charCount,
-            reactionTime: this.reactionTimes.length ? (this.reactionTimes.reduce((a, b) => a + b, 0) / this.reactionTimes.length) : 500
+            reactionTime: Math.max(0, currentReaction),
+            trueTime: Math.max(0.001, trueTime),
+            totalKeystrokes: this.totalKeystrokes,
+            correctKeystrokes: this.correctKeystrokes
         };
     }
 
@@ -531,11 +553,32 @@ socket.on('wordSucccess', ({ winnerName, winnerId, scores }) => {
     overlay.style.color = (winnerId === socket.id) ? 'var(--success-color)' : 'var(--error-color)';
 });
 
-socket.on('gameFinished', ({ winner }) => {
+socket.on('gameFinished', ({ winner, players }) => {
     setTimeout(() => {
         showScreen('result');
         document.getElementById('winnerName').textContent = winner.name;
-        document.getElementById('resultList').innerHTML = `WINNER: ${winner.name} <br> Score: ${winner.score}`;
+
+        ui.resultList.innerHTML = ''; // Ensure clean slate
+
+        // Sort players by score descend
+        players.sort((a, b) => b.score - a.score);
+
+        players.forEach(p => {
+            const stats = p.finalStats || {};
+            const tr = document.createElement('tr');
+            if (p.id === winner.id) tr.className = 'result-winner-row';
+
+            tr.innerHTML = `
+                <td>${p.name}</td>
+                <td>${stats.score}</td>
+                <td>${(stats.accuracy || 0).toFixed(1)}%</td>
+                <td>${(stats.kpm || 0).toFixed(0)} <span style="font-size:0.7em">kpm</span></td>
+                <td>${(stats.trueKpm || 0).toFixed(0)} <span style="font-size:0.7em">kpm</span></td>
+                <td>${(stats.avgReaction || 0).toFixed(0)} <span style="font-size:0.7em">ms</span></td>
+            `;
+            ui.resultList.appendChild(tr);
+        });
+
     }, 1500);
 });
 
@@ -558,10 +601,40 @@ socket.on('publicRoomsList', (list) => {
     });
 });
 
+// --- Chat Socket Events ---
+socket.on('chatMessage', ({ time, name, message, isSystem }) => {
+    const div = document.createElement('div');
+    div.className = `chat-msg ${isSystem ? 'system' : ''}`;
+
+    if (isSystem) {
+        div.textContent = message;
+    } else {
+        div.innerHTML = `<span class="chat-time">${time}</span><span class="chat-name">${name}:</span><span class="chat-content">${message}</span>`;
+    }
+
+    ui.chatMessages.appendChild(div);
+    scrollToBottom();
+});
+
+
 window.joinPublic = (rid) => {
     if (!myPlayerName) myPlayerName = ui.playerName.value || "Guest";
     socket.emit('joinRoom', { roomId: rid, playerName: myPlayerName });
 };
+
+// --- Chat Interactions ---
+function sendChat() {
+    const msg = ui.chatInput.value.trim();
+    if (!msg || !currentRoomId) return;
+
+    socket.emit('chatMessage', { roomId: currentRoomId, message: msg });
+    ui.chatInput.value = '';
+}
+
+ui.btnSendChat.addEventListener('click', sendChat);
+ui.chatInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') sendChat();
+});
 
 
 // --- UI Interactions ---

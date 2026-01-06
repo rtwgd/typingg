@@ -67,7 +67,13 @@ io.on('connection', (socket) => {
                 isHost: true,
                 totalTime: 0,
                 totalChars: 0,
-                kpm: 0
+                totalChars: 0,
+                kpm: 0,
+                reactionTime: 0,
+                reactionCount: 0,
+                totalTrueTime: 0,
+                totalKeystrokes: 0,
+                correctKeystrokes: 0
             }],
             settings: {
                 winCount: 10,
@@ -109,7 +115,13 @@ io.on('connection', (socket) => {
             isHost: false,
             totalTime: 0,
             totalChars: 0,
-            kpm: 0
+            totalChars: 0,
+            kpm: 0,
+            reactionTime: 0,
+            reactionCount: 0,
+            totalTrueTime: 0,
+            totalKeystrokes: 0,
+            correctKeystrokes: 0
         });
 
         socket.join(roomId);
@@ -193,6 +205,25 @@ io.on('connection', (socket) => {
         io.to(roomId).emit('gameReset', { roomState: room });
     });
 
+    // --- Chat Events ---
+    socket.on('chatMessage', ({ roomId, message }) => {
+        const room = rooms[roomId];
+        if (!room) return;
+
+        const player = room.players.find(p => p.id === socket.id);
+        if (!player) return;
+
+        const now = new Date();
+        const timeStr = now.toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' });
+
+        io.to(roomId).emit('chatMessage', {
+            time: timeStr,
+            name: player.name,
+            message: message,
+            isSystem: false
+        });
+    });
+
     // --- Game Logic Events ---
 
     socket.on('reportProgress', ({ roomId, progress }) => {
@@ -206,7 +237,7 @@ io.on('connection', (socket) => {
         }
     });
 
-    socket.on('wordCompleted', ({ roomId, timeTaken, charCount, reactionTime }) => {
+    socket.on('wordCompleted', ({ roomId, timeTaken, charCount, reactionTime, trueTime, totalKeystrokes, correctKeystrokes }) => {
         const room = rooms[roomId];
         if (!room || room.status !== 'playing') return;
 
@@ -216,7 +247,13 @@ io.on('connection', (socket) => {
         // Update stats
         player.totalTime += timeTaken;
         player.totalChars += charCount;
-        player.reactionTime = reactionTime; // Store reaction time
+        player.reactionTime += reactionTime; // Sum it up, avg later
+        player.reactionCount++;
+
+        // Extended stats
+        player.totalTrueTime += (trueTime || 0);
+        player.totalKeystrokes += (totalKeystrokes || 0);
+        player.correctKeystrokes += (correctKeystrokes || 0);
 
         if (player.totalTime > 0) {
             player.kpm = (player.totalChars / player.totalTime) * 60; // Keys Per Minute
@@ -234,7 +271,24 @@ io.on('connection', (socket) => {
 
         if (player.score >= room.settings.winCount) {
             room.status = 'finished';
-            io.to(roomId).emit('gameFinished', { winner: player });
+
+            // Calculate final stats for all players
+            room.players.forEach(p => {
+                p.finalStats = {
+                    score: p.score,
+                    totalTime: p.totalTime,
+                    totalChars: p.totalChars,
+                    kpm: p.totalTime > 0 ? (p.totalChars / p.totalTime) * 60 : 0,
+                    trueKpm: p.totalTrueTime > 0 ? (p.totalChars / p.totalTrueTime) * 60 : 0,
+                    avgReaction: p.reactionCount > 0 ? (p.reactionTime / p.reactionCount) : 0,
+                    accuracy: p.totalKeystrokes > 0 ? (p.correctKeystrokes / p.totalKeystrokes) * 100 : 0
+                };
+            });
+
+            io.to(roomId).emit('gameFinished', {
+                winner: player,
+                players: room.players
+            });
             room.processingWord = false;
         } else {
             setTimeout(() => {
@@ -246,16 +300,22 @@ io.on('connection', (socket) => {
         }
     });
 
-    socket.on('reportRoundStats', ({ roomId, timeTaken, charCount, reactionTime }) => {
+    socket.on('reportRoundStats', ({ roomId, timeTaken, charCount, reactionTime, trueTime, totalKeystrokes, correctKeystrokes }) => {
         const room = rooms[roomId];
         if (!room) return;
         const player = room.players.find(p => p.id === socket.id);
         if (!player) return;
 
-        // Update stats for handicap calculation only
+        // Update stats for handicap calculation only AND final stats
         player.totalTime += timeTaken;
         player.totalChars += charCount;
-        player.reactionTime = reactionTime; // Update reaction time
+
+        // Also update extended stats even for losers of the round, so final stats are accurate
+        player.reactionTime += reactionTime;
+        player.reactionCount++;
+        player.totalTrueTime += (trueTime || 0);
+        player.totalKeystrokes += (totalKeystrokes || 0);
+        player.correctKeystrokes += (correctKeystrokes || 0);
 
         if (player.totalTime > 0) {
             player.kpm = (player.totalChars / player.totalTime) * 60;
@@ -305,7 +365,14 @@ function startGameLoop(roomId) {
         // Maybe reset for new game to measure current form.
         p.totalTime = 0;
         p.totalChars = 0;
-        p.kpm = 0; // Wait, if we reset, handicap first round is 0.
+        p.totalTime = 0;
+        p.totalChars = 0;
+        p.kpm = 0;
+        p.reactionTime = 0;
+        p.reactionCount = 0;
+        p.totalTrueTime = 0;
+        p.totalKeystrokes = 0;
+        p.correctKeystrokes = 0;
     });
 
     nextWord(roomId);

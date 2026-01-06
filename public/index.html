@@ -62,76 +62,68 @@
         <div id="screen-lobby" class="screen">
             <h2>LOBBY</h2>
 
-            <div class="card">
-                <div class="room-info">
-                    <div id="displayRoomId" class="room-id">------</div>
-                </div>
+            <div class="lobby-layout">
+                <div class="card lobby-main">
+                    <div class="room-info">
+                        <div id="displayRoomId" class="room-id">------</div>
+                    </div>
 
-                <div class="settings-panel" id="settingsPanel">
-                    <div class="setting-group">
-                        <span class="setting-label">勝負本数 (先取)</span>
-                        <div class="input-group" style="margin-bottom:0; justify-content: flex-start; gap: 10px;">
-                            <input type="number" id="winCountSelect" value="10" min="1" max="99"
-                                style="width: 80px; padding: 8px;" title="勝利に必要な本数">
-                            <span class="setting-label">最大人数</span>
-                            <input type="number" id="maxPlayersSelect" value="4" min="2" max="20"
-                                style="width: 80px; padding: 8px;" title="部屋に入れる最大人数">
+                    <div class="settings-panel" id="settingsPanel">
+                        <!-- Settings content same as before -->
+                        <div class="setting-group">
+                            <span class="setting-label">勝負本数 (先取)</span>
+                            <div class="input-group" style="margin-bottom:0; justify-content: flex-start; gap: 10px;">
+                                <input type="number" id="winCountSelect" value="10" min="1" max="99"
+                                    style="width: 80px; padding: 8px;" title="勝利に必要な本数">
+                                <span class="setting-label">最大人数</span>
+                                <input type="number" id="maxPlayersSelect" value="4" min="2" max="20"
+                                    style="width: 80px; padding: 8px;" title="部屋に入れる最大人数">
+                            </div>
+                        </div>
+                        <div class="setting-group">
+                            <label class="checkbox-label" style="color: var(--primary-light); font-weight: bold;">
+                                <input type="checkbox" id="handicapCheck">
+                                ハンデ機能 (入力制限)
+                            </label>
+                        </div>
+                        <div class="setting-group">
+                            <span class="setting-label">ワード難易度 <span
+                                    style="font-size:0.8em; font-weight:normal;">(寿司打コース準拠)</span></span>
+                            <div class="checkbox-group">
+                                <label class="checkbox-label"><input type="checkbox" name="course" value="easy" checked>
+                                    Easy (お手軽)</label>
+                                <label class="checkbox-label"><input type="checkbox" name="course" value="normal"
+                                        checked>
+                                    Normal (お勧め)</label>
+                                <label class="checkbox-label"><input type="checkbox" name="course" value="hard" checked>
+                                    Hard (高級)</label>
+                            </div>
                         </div>
                     </div>
-                    <div class="setting-group">
-                        <label class="checkbox-label" style="color: var(--primary-light); font-weight: bold;">
-                            <input type="checkbox" id="handicapCheck">
-                            ハンデ機能 (入力制限)
-                        </label>
+
+                    <div
+                        style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px;">
+                        <p style="text-align: left; margin: 0;">参加プレイヤー:</p>
                     </div>
-                    <div class="setting-group">
-                        <span class="setting-label">ワード難易度 <span
-                                style="font-size:0.8em; font-weight:normal;">(寿司打コース準拠)</span></span>
-                        <div class="checkbox-group">
-                            <label class="checkbox-label"><input type="checkbox" name="course" value="easy" checked>
-                                Easy (お手軽)</label>
-                            <label class="checkbox-label"><input type="checkbox" name="course" value="normal" checked>
-                                Normal (お勧め)</label>
-                            <label class="checkbox-label"><input type="checkbox" name="course" value="hard" checked>
-                                Hard (高級)</label>
-                        </div>
+                    <ul id="lobbyPlayerList" class="player-list"></ul>
+
+                    <div style="display: flex; justify-content: space-between; margin-top: 20px;">
+                        <button id="btnLeaveLobby" class="btn btn-secondary" style="font-size: 0.9rem;">退出</button>
+                        <button id="btnStartGame" class="btn" disabled>対戦開始</button>
                     </div>
                 </div>
 
-                <p style="text-align: left; margin-bottom: 5px;">参加プレイヤー:</p>
-                <ul id="lobbyPlayerList" class="player-list"></ul>
-
-                <div style="display: flex; justify-content: space-between; margin-top: 20px;">
-                    <button id="btnLeaveLobby" class="btn btn-secondary" style="font-size: 0.9rem;">退出</button>
-                    <button id="btnStartGame" class="btn" disabled>対戦開始</button>
-                </div>
-            </div>
-        </div>
-
-        <!-- Game Screen -->
-        <div id="screen-game" class="screen">
-            <div id="scoreboard" class="scoreboard"></div>
-
-            <!-- Main Progress Bar Area -->
-            <div id="gameProgressBar" class="main-progress-container"></div>
-
-            <div class="game-container">
-                <div id="wordBox" class="word-box">
-                    <div id="wordJapanese" class="word-japanese">待機中...</div>
-                    <div id="wordReading" class="word-reading">waiting...</div>
-                    <div id="wordRomaji" class="word-romaji">waiting</div>
-                </div>
-            </div>
-
-            <!-- Status Msg Removed -->
-
-            <div id="feedbackOverlay" class="feedback-overlay"></div>
-
-            <!-- Handicap Meter (Charge Up) -->
-            <div id="handicapMeterContainer" class="handicap-meter-container">
-                <div class="handicap-label">CHARGING...</div>
-                <div class="handicap-meter-bg">
-                    <div id="handicapMeterBar" class="handicap-meter-bar"></div>
+                <!-- Chat Area -->
+                <div class="card lobby-chat">
+                    <h3 style="margin-top: 0; font-size: 1.1rem; color: var(--primary-light);">CHAT</h3>
+                    <div id="chatMessages" class="chat-messages">
+                        <!-- Messages go here -->
+                        <div class="chat-msg system">ようこそ！チャットが利用可能です。</div>
+                    </div>
+                    <div class="chat-input-area">
+                        <input type="text" id="chatInput" placeholder="メッセージを入力..." maxlength="100">
+                        <button id="btnSendChat" class="btn btn-sm">送信</button>
+                    </div>
                 </div>
             </div>
         </div>
@@ -139,10 +131,27 @@
         <!-- Result Screen -->
         <div id="screen-result" class="screen">
             <h1>RESULT</h1>
-            <div class="card" style="text-align: center;">
+            <div class="card result-card" style="text-align: center; max-width: 800px;">
                 <h2 id="winnerName" style="color: var(--accent-color); font-size: 3rem; margin-bottom: 10px;">WINNER
                 </h2>
-                <div class="player-list" id="resultList"></div>
+
+                <div class="result-table-container">
+                    <table class="result-table" id="resultTable">
+                        <thead>
+                            <tr>
+                                <th>Name</th>
+                                <th>Score</th>
+                                <th>Accuracy</th>
+                                <th>Total Speed</th>
+                                <th>True Speed</th>
+                                <th>Avg Reaction</th>
+                            </tr>
+                        </thead>
+                        <tbody id="resultList">
+                            <!-- Rows populated by JS -->
+                        </tbody>
+                    </table>
+                </div>
 
                 <div style="margin-top: 30px;">
                     <button id="btnReturnLobby" class="btn">ロビーに戻る</button>

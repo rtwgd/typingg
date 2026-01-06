@@ -78,6 +78,7 @@ h1 {
     font-weight: 700;
     margin-bottom: 1rem;
     background: linear-gradient(135deg, var(--primary-light), var(--accent-color));
+    background-clip: text;
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
     text-shadow: 0 4px 15px rgba(0, 0, 0, 0.5);
@@ -635,4 +636,130 @@ input[type="number"]:focus {
 
 .toast.show {
     transform: translateX(0);
+}
+
+/* --- Lobby Layout & Chat --- */
+.lobby-layout {
+    display: flex;
+    gap: 20px;
+    width: 100%;
+    max-width: 1000px;
+    flex-wrap: wrap;
+    /* responsive */
+    justify-content: center;
+}
+
+.lobby-main {
+    flex: 2;
+    min-width: 300px;
+}
+
+.lobby-chat {
+    flex: 1;
+    min-width: 250px;
+    display: flex;
+    flex-direction: column;
+    height: 500px;
+    /* Fixed height for chat consistency with lobby */
+    padding: 20px;
+}
+
+.chat-messages {
+    flex-grow: 1;
+    overflow-y: auto;
+    background: rgba(0, 0, 0, 0.3);
+    border-radius: 10px;
+    padding: 10px;
+    margin-bottom: 15px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.chat-msg {
+    font-size: 0.9rem;
+    padding: 5px 10px;
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: 8px;
+    word-break: break-all;
+    animation: fadeIn 0.2s;
+}
+
+.chat-msg.system {
+    color: var(--accent-color);
+    font-size: 0.8rem;
+    text-align: center;
+    background: transparent;
+}
+
+.chat-time {
+    font-size: 0.7rem;
+    color: var(--text-secondary);
+    margin-right: 5px;
+}
+
+.chat-name {
+    font-weight: bold;
+    color: var(--primary-light);
+    margin-right: 5px;
+}
+
+.chat-input-area {
+    display: flex;
+    gap: 5px;
+}
+
+.chat-input-area input {
+    width: 100%;
+    padding: 8px 15px;
+    font-size: 0.9rem;
+}
+
+/* --- Result Table --- */
+.result-table-container {
+    width: 100%;
+    overflow-x: auto;
+    margin: 20px 0;
+}
+
+.result-table {
+    width: 100%;
+    border-collapse: collapse;
+    background: rgba(0, 0, 0, 0.2);
+    border-radius: 10px;
+    overflow: hidden;
+}
+
+.result-table th,
+.result-table td {
+    padding: 12px 15px;
+    text-align: center;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.result-table th {
+    background: rgba(98, 0, 234, 0.1);
+    color: var(--primary-light);
+    font-weight: 600;
+    font-size: 0.9rem;
+    white-space: nowrap;
+}
+
+.result-table td {
+    color: var(--text-color);
+    font-size: 1rem;
+}
+
+.result-table tr:last-child td {
+    border-bottom: none;
+}
+
+.result-winner-row {
+    background: rgba(3, 218, 198, 0.05);
+    font-weight: bold;
+}
+
+.result-winner-row td {
+    color: var(--accent-color);
 }
