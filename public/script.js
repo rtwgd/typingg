@@ -265,7 +265,25 @@ class TypingEngine {
         this.wordStartTime = Date.now(); // Reset start time
     }
 
-    // ... normalizeKana ... 
+    normalizeKana(originalKanaList) {
+        const rawString = originalKanaList.join('');
+        const parts = [];
+        let i = 0;
+        while (i < rawString.length) {
+            if (i + 1 < rawString.length) {
+                const two = rawString.substring(i, i + 2);
+                if (kanaToRomaji[two]) {
+                    parts.push(two);
+                    i += 2;
+                    continue;
+                }
+            }
+            const one = rawString.substring(i, i + 1);
+            parts.push(one);
+            i++;
+        }
+        return parts;
+    }
 
     handleInput(key) {
         if (Date.now() < this.inputEnabledTime) return false;
