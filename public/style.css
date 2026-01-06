@@ -457,21 +457,21 @@ input[type="number"]:focus {
 }
 
 .word-japanese {
-    font-size: 3rem;
+    font-size: 5rem;
     font-weight: 700;
     margin-bottom: 20px;
     letter-spacing: 2px;
 }
 
 .word-reading {
-    font-size: 1.2rem;
+    font-size: 1.5rem;
     color: var(--text-secondary);
     margin-bottom: 20px;
     letter-spacing: 1px;
 }
 
 .word-romaji {
-    font-size: 2.5rem;
+    font-size: 3.5rem;
     font-family: monospace;
     color: #555;
     position: relative;
