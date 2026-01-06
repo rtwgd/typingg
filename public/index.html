@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="ja">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Typing Battle</title>
+    <link rel="stylesheet" href="style.css">
+    <script src="/socket.io/socket.io.js"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700&display=swap" rel="stylesheet">
+</head>
+
+<body>
+
+    <div class="container">
+
+        <!-- Welcome Screen -->
+        <div id="screen-welcome" class="screen active">
+            <h1>TYPING BATTLE</h1>
+            <p>リアルタイム対戦タイピングゲーム</p>
+
+            <div class="card">
+                <div class="input-group">
+                    <input type="text" id="playerNameInput" placeholder="プレイヤー名を入力" maxlength="10">
+                </div>
+
+                <div class="menu-buttons">
+                    <div style="margin-bottom: 20px;">
+                        <h3>部屋を作成</h3>
+                        <button id="btnCreatePublic" class="btn">パブリック部屋作成</button>
+                        <button id="btnCreatePrivate" class="btn btn-secondary">プライベート部屋作成</button>
+                    </div>
+                    <div>
+                        <h3>部屋に参加</h3>
+                        <button id="btnJoinPublicMenu" class="btn">パブリック部屋を探す</button>
+                        <button id="btnJoinPrivateMenu" class="btn btn-secondary">ID入力で参加</button>
+                    </div>
+                </div>
+
+                <!-- Input Areas (Hidden by default) -->
+                <div id="joinInputArea" class="submenu-area" style="display:none;">
+                    <h4>プライベート部屋ID入力</h4>
+                    <div class="input-group">
+                        <input type="text" id="roomIdInput" placeholder="ID (例: X1Y2Z3)">
+                    </div>
+                    <button id="btnJoinRoomConfirm" class="btn">参加する</button>
+                </div>
+
+                <div id="publicRoomArea" class="submenu-area" style="display:none;">
+                    <h4>パブリック部屋一覧</h4>
+                    <ul id="publicRoomList" class="public-room-list">
+                        <!-- List populated via JS -->
+                    </ul>
+                </div>
+
+            </div>
+        </div>
+
+        <!-- Lobby Screen -->
+        <div id="screen-lobby" class="screen">
+            <h2>LOBBY</h2>
+
+            <div class="card">
+                <div class="room-info">
+                    <div id="displayRoomId" class="room-id">------</div>
+                </div>
+
+                <div class="settings-panel" id="settingsPanel">
+                    <div class="setting-group">
+                        <span class="setting-label">勝負本数 (先取)</span>
+                        <div class="input-group" style="margin-bottom:0; justify-content: flex-start; gap: 10px;">
+                            <input type="number" id="winCountSelect" value="10" min="1" max="99"
+                                style="width: 80px; padding: 8px;" title="勝利に必要な本数">
+                            <span class="setting-label">最大人数</span>
+                            <input type="number" id="maxPlayersSelect" value="4" min="2" max="20"
+                                style="width: 80px; padding: 8px;" title="部屋に入れる最大人数">
+                        </div>
+                    </div>
+                    <div class="setting-group">
+                        <label class="checkbox-label" style="color: var(--primary-light); font-weight: bold;">
+                            <input type="checkbox" id="handicapCheck">
+                            ハンデ機能 (入力制限)
+                        </label>
+                    </div>
+                    <div class="setting-group">
+                        <span class="setting-label">ワード難易度 <span
+                                style="font-size:0.8em; font-weight:normal;">(寿司打コース準拠)</span></span>
+                        <div class="checkbox-group">
+                            <label class="checkbox-label"><input type="checkbox" name="course" value="easy" checked>
+                                Easy (お手軽)</label>
+                            <label class="checkbox-label"><input type="checkbox" name="course" value="normal" checked>
+                                Normal (お勧め)</label>
+                            <label class="checkbox-label"><input type="checkbox" name="course" value="hard" checked>
+                                Hard (高級)</label>
+                        </div>
+                    </div>
+                </div>
+
+                <p style="text-align: left; margin-bottom: 5px;">参加プレイヤー:</p>
+                <ul id="lobbyPlayerList" class="player-list"></ul>
+
+                <div style="display: flex; justify-content: space-between; margin-top: 20px;">
+                    <button id="btnLeaveLobby" class="btn btn-secondary" style="font-size: 0.9rem;">退出</button>
+                    <button id="btnStartGame" class="btn" disabled>対戦開始</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Game Screen -->
+        <div id="screen-game" class="screen">
+            <div id="scoreboard" class="scoreboard"></div>
+
+            <!-- Main Progress Bar Area -->
+            <div id="gameProgressBar" class="main-progress-container"></div>
+
+            <div class="game-container">
+                <div id="wordBox" class="word-box">
+                    <div id="wordJapanese" class="word-japanese">待機中...</div>
+                    <div id="wordReading" class="word-reading">waiting...</div>
+                    <div id="wordRomaji" class="word-romaji">waiting</div>
+                </div>
+            </div>
+
+            <!-- Status Msg Removed -->
+
+            <div id="feedbackOverlay" class="feedback-overlay"></div>
+
+            <!-- Handicap Meter (Charge Up) -->
+            <div id="handicapMeterContainer" class="handicap-meter-container">
+                <div class="handicap-label">CHARGING...</div>
+                <div class="handicap-meter-bg">
+                    <div id="handicapMeterBar" class="handicap-meter-bar"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Result Screen -->
+        <div id="screen-result" class="screen">
+            <h1>RESULT</h1>
+            <div class="card" style="text-align: center;">
+                <h2 id="winnerName" style="color: var(--accent-color); font-size: 3rem; margin-bottom: 10px;">WINNER
+                </h2>
+                <div class="player-list" id="resultList"></div>
+
+                <div style="margin-top: 30px;">
+                    <button id="btnReturnLobby" class="btn">ロビーに戻る</button>
+                    <button id="btnExitGame" class="btn btn-secondary">退出する</button>
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- Countdown Overlay -->
+    <div id="countdownOverlay" class="countdown-overlay" style="display: none;">
+        <div id="countdownVal" class="countdown-val">3</div>
+    </div>
+
+    <!-- Toast -->
+    <div id="toast" class="toast">Error Message</div>
+
+    <script src="script.js"></script>
+</body>
+
+</html>
