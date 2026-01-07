@@ -135,7 +135,10 @@
             <div class="game-container">
                 <!-- Handicap Visuals -->
                 <div id="handicapMeterContainer" class="handicap-meter-container">
-                    <div id="handicapMeterBar" class="handicap-meter-bar"></div>
+                    <div class="handicap-label">入力制限中... <span id="handicapTimer">0</span>ms</div>
+                    <div class="handicap-meter-bg">
+                        <div id="handicapMeterBar" class="handicap-meter-bar"></div>
+                    </div>
                 </div>
 
                 <div id="wordBox" class="word-box">
@@ -190,7 +193,7 @@
     </div>
 
     <!-- Toast -->
-    <div id="toast" class="toast">Error Message</div>
+    <div id="toast" class="toast"></div>
 
     <script src="script.js"></script>
 </body>

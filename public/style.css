@@ -1,5 +1,6 @@
 /* ... Existing Styles ... */
 @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;700&display=swap');
 
 :root {
     --bg-color: #121212;
@@ -11,7 +12,8 @@
     --text-secondary: #b0bec5;
     --error-color: #cf6679;
     --success-color: #03dac6;
-    --font-main: 'Outfit', sans-serif;
+    --font-main: "Gen Shin Gothic P", "Gen Shin Gothic", "Noto Sans JP", "Helvetica Neue", Arial, "Hiragino Kaku Gothic ProN", "Hiragino Sans", Meiryo, sans-serif;
+    --font-code: "Consolas", "Monaco", monospace;
 }
 
 * {
@@ -456,23 +458,24 @@ input[type="number"]:focus {
     }
 }
 
-.word-japanese {
-    font-size: 5rem;
+.word-jp {
+    font-size: 3rem;
     font-weight: 700;
-    margin-bottom: 20px;
+    margin-bottom: 5px;
     letter-spacing: 2px;
+    white-space: nowrap;
 }
 
 .word-reading {
-    font-size: 1.5rem;
+    font-size: 1.2rem;
     color: var(--text-secondary);
-    margin-bottom: 20px;
+    margin-bottom: 25px;
     letter-spacing: 1px;
 }
 
 .word-romaji {
-    font-size: 3.5rem;
-    font-family: monospace;
+    font-size: 3rem;
+    font-family: var(--font-code);
     color: #555;
     position: relative;
     display: inline-block;
@@ -522,10 +525,13 @@ input[type="number"]:focus {
     margin: 20px auto;
     text-align: center;
     /* Fix layout shift: Always take space */
-    height: 40px;
+    height: auto;
     opacity: 0;
     pointer-events: none;
     transition: opacity 0.2s;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
 }
 
 .handicap-meter-container.active {
@@ -537,12 +543,14 @@ input[type="number"]:focus {
     font-weight: bold;
     font-size: 1rem;
     margin-bottom: 5px;
+    margin-bottom: 5px;
     letter-spacing: 2px;
+    text-shadow: 0 0 5px var(--accent-color);
 }
 
 .handicap-meter-bg {
     width: 100%;
-    height: 10px;
+    height: 6px;
     background: rgba(255, 255, 255, 0.1);
     border-radius: 5px;
     overflow: hidden;
@@ -632,10 +640,13 @@ input[type="number"]:focus {
     transform: translateX(150%);
     transition: transform 0.3s cubic-bezier(0.68, -0.55, 0.27, 1.55);
     z-index: 1000;
+    opacity: 0;
+    pointer-events: none;
 }
 
 .toast.show {
     transform: translateX(0);
+    opacity: 1;
 }
 
 /* --- Lobby Layout & Chat --- */

@@ -4,8 +4,12 @@ const socket = io();
 let myPlayerName = "";
 let currentRoomId = null;
 let isHost = false;
+
 let currentWord = null;
+let isRoundActive = false; // Input blocking flag
 let inputBlockedUntil = 0; // Timestamp for handicap delay
+let handicapTimeout = null; // Timer for hiding handicap bar
+let handicapCountdownInterval = null; // Interval for countdown display
 let blockTimerInterval = null;
 
 // --- DOM Elements ---
@@ -207,7 +211,7 @@ const kanaToRomaji = {
     'みゃ': ['mya'], 'みぃ': ['myi'], 'みゅ': ['myu'], 'みぇ': ['mye'], 'みょ': ['myo'],
     'りゃ': ['rya'], 'りぃ': ['ryi'], 'りゅ': ['ryu'], 'りぇ': ['rye'], 'りょ': ['ryo'],
     'ぎゃ': ['gya'], 'ぎぃ': ['gyi'], 'ぎゅ': ['gyu'], 'ぎぇ': ['gye'], 'ぎょ': ['gyo'],
-    'じゃ': ['zya', 'ja', 'jya'], 'じぃ': ['zyi'], 'じゅ': ['zyu', 'ju', 'jyu'], 'ジェ': ['zye', 'je', 'jye'], 'じょ': ['zyo', 'jo', 'jyo'],
+    'じゃ': ['zya', 'ja', 'jya'], 'じぃ': ['zyi'], 'じゅ': ['zyu', 'ju', 'jyu'], 'じぇ': ['zye', 'je', 'jye'], 'ジェ': ['zye', 'je', 'jye'], 'じょ': ['zyo', 'jo', 'jyo'],
     'びゃ': ['bya'], 'びぃ': ['byi'], 'びゅ': ['byu'], 'びぇ': ['bye'], 'びょ': ['byo'],
     'ぴゃ': ['pya'], 'ぴぃ': ['pyi'], 'ぴゅ': ['pyu'], 'ぴぇ': ['pye'], 'ぴょ': ['pyo'],
 
@@ -334,7 +338,8 @@ class TypingEngine {
                 if (this.currentIndex < this.kanaParts.length) {
                     return this.handleInput(key);
                 }
-                return 'invalid';
+                // Implicit 'n' was the last char. Finish word.
+                return this.finishWord();
             }
         }
 
@@ -350,7 +355,6 @@ class TypingEngine {
                 this.currentIndex++;
                 this.charCount += validPattern.length; // Count actual keys
                 this.updateDisplay();
-
             } else {
                 this.updateDisplay();
             }
@@ -362,33 +366,48 @@ class TypingEngine {
             socket.emit('reportProgress', { roomId: currentRoomId, progress: pct });
 
             if (this.currentIndex >= this.kanaParts.length) {
-                const now = Date.now();
-                const timeTaken = (now - this.wordStartTime) / 1000;
-                // True Time: Time from first keypress to finish
-                const trueTime = (this.firstKeyTime > 0) ? (now - this.firstKeyTime) / 1000 : timeTaken;
-
-                // Calculate average reaction time for this word? No, just report this word's reaction
-                const currentReaction = (this.firstKeyTime > 0) ? (this.firstKeyTime - this.inputEnabledTime) : 0;
-
-                // For average tracking in class
-                // We actually report raw for server to average
-
-                socket.emit('wordCompleted', {
-                    roomId: currentRoomId,
-                    timeTaken,
-                    charCount: this.charCount,
-                    reactionTime: Math.max(0, currentReaction),
-                    trueTime: Math.max(0.001, trueTime), // Avoid divide by zero
-                    totalKeystrokes: this.totalKeystrokes,
-                    correctKeystrokes: this.correctKeystrokes
-                });
-                return 'completed';
+                return this.finishWord();
             }
             return 'valid';
         }
 
+
+
+        // Bug fix: Check if we just completed "n" via implicit logic but user typed an extra char
+        // e.g. "shinkansen" -> user typed "sinkansenx".
+        // The 'x' triggered 'n' completion above (lines 322-338).
+        // If we are now DONE, report completion immediately despite 'x' being invalid for *next* char (which doesn't exist).
+        if (this.currentIndex >= this.kanaParts.length) {
+            return this.finishWord();
+        }
+
         return 'invalid';
     }
+
+    finishWord() {
+        const now = Date.now();
+        const timeTaken = (now - this.wordStartTime) / 1000;
+        // True Time: Time from first keypress to finish
+        const trueTime = (this.firstKeyTime > 0) ? (now - this.firstKeyTime) / 1000 : timeTaken;
+
+        // Calculate average reaction time for this word? No, just report this word's reaction
+        const currentReaction = (this.firstKeyTime > 0) ? (this.firstKeyTime - this.inputEnabledTime) : 0;
+
+        // For average tracking in class
+        // We actually report raw for server to average
+
+        socket.emit('wordCompleted', {
+            roomId: currentRoomId,
+            timeTaken,
+            charCount: this.charCount,
+            reactionTime: Math.max(0, currentReaction),
+            trueTime: Math.max(0.001, trueTime), // Avoid divide by zero
+            totalKeystrokes: this.totalKeystrokes,
+            correctKeystrokes: this.correctKeystrokes
+        });
+        return 'completed';
+    }
+
 
     getCurrentStats() {
         // Partial stats for round end when not winner
@@ -497,6 +516,7 @@ socket.on('countdown', ({ count }) => {
 socket.on('newWord', ({ word, delay }) => {
     ui.countdownInfo.style.display = 'none';
     currentWord = word;
+    isRoundActive = true;
     if (screens.game.style.display !== 'flex') showScreen('game');
 
     ui.wordJp.textContent = word.text;
@@ -505,27 +525,66 @@ socket.on('newWord', ({ word, delay }) => {
     // Handicap Delay Handling
     const meterContainer = document.getElementById('handicapMeterContainer');
     const meterBar = document.getElementById('handicapMeterBar');
+    const timerDisplay = document.getElementById('handicapTimer');
+
+    // Clear any existing reset timer and countdown interval
+    if (handicapTimeout) {
+        clearTimeout(handicapTimeout);
+        handicapTimeout = null;
+    }
+    if (handicapCountdownInterval) {
+        clearInterval(handicapCountdownInterval);
+        handicapCountdownInterval = null;
+    }
+
+    // Reset state first
+    meterContainer.classList.remove('active');
+    meterBar.style.transition = 'none';
+    meterBar.style.width = '0%';
+    timerDisplay.textContent = '0';
+
+    // Force reflow to apply reset
+    void meterBar.offsetWidth;
 
     if (delay > 0) {
-        meterContainer.classList.add('active'); // active class handles visibility/opacity
-        meterBar.style.width = '0%';
-        meterBar.style.transition = `width ${delay}ms linear`;
+        const endTime = Date.now() + delay;
 
-        // Force reflow
-        void meterBar.offsetWidth;
+        // Start new handicap
+        meterContainer.classList.add('active');
+        timerDisplay.textContent = delay;
 
-        meterBar.style.width = '100%';
+        // Start countdown interval (update every 50ms for smooth display)
+        handicapCountdownInterval = setInterval(() => {
+            const remaining = Math.max(0, endTime - Date.now());
+            timerDisplay.textContent = remaining;
+            if (remaining <= 0) {
+                clearInterval(handicapCountdownInterval);
+                handicapCountdownInterval = null;
+            }
+        }, 50);
 
-        setTimeout(() => {
+        // We need a slight delay to allow the 'width: 0%' to stick before starting transition?
+        // Actually reflow above handles it.
+        requestAnimationFrame(() => {
+            meterBar.style.transition = `width ${delay}ms linear`;
+            meterBar.style.width = '100%';
+        });
+
+        handicapTimeout = setTimeout(() => {
             meterContainer.classList.remove('active');
             meterBar.style.transition = 'none';
             meterBar.style.width = '0%';
+            timerDisplay.textContent = '0';
+            handicapTimeout = null;
+            if (handicapCountdownInterval) {
+                clearInterval(handicapCountdownInterval);
+                handicapCountdownInterval = null;
+            }
         }, delay);
 
     } else {
         inputBlockedUntil = 0;
-        meterContainer.classList.remove('active');
-        meterBar.style.width = '0%';
+        // Keep it hidden
     }
 
     const box = document.getElementById('wordBox');
@@ -544,6 +603,7 @@ socket.on('progressUpdated', ({ playerId, progress, reset }) => {
 });
 
 socket.on('wordSucccess', ({ winnerName, winnerId, scores }) => {
+    isRoundActive = false;
     renderScoreboard(scores.map(s => ({
         id: s.id,
         score: s.score,
@@ -736,6 +796,7 @@ document.addEventListener('keydown', (e) => {
     if (e.ctrlKey || e.altKey || e.metaKey || e.key.length !== 1) return;
 
     // Block input if handicapped
+    if (!isRoundActive) return;
     if (Date.now() < inputBlockedUntil) {
         e.preventDefault();
         return;

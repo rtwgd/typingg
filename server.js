@@ -73,7 +73,9 @@ io.on('connection', (socket) => {
                 reactionCount: 0,
                 totalTrueTime: 0,
                 totalKeystrokes: 0,
-                correctKeystrokes: 0
+                totalKeystrokes: 0,
+                correctKeystrokes: 0,
+                statsHistory: [] // [{kpm, reaction}, ...] max 5
             }],
             settings: {
                 winCount: 10,
@@ -121,7 +123,9 @@ io.on('connection', (socket) => {
             reactionCount: 0,
             totalTrueTime: 0,
             totalKeystrokes: 0,
-            correctKeystrokes: 0
+            totalKeystrokes: 0,
+            correctKeystrokes: 0,
+            statsHistory: []
         });
 
         socket.join(roomId);
@@ -253,6 +257,13 @@ io.on('connection', (socket) => {
         player.reactionTime += reactionTime; // Sum it up, avg later
         player.reactionCount++;
 
+
+
+        // Push to history for handicap
+        const currentKpm = (charCount / timeTaken) * 60;
+        player.statsHistory.push({ kpm: currentKpm, reaction: reactionTime });
+        if (player.statsHistory.length > 5) player.statsHistory.shift();
+
         // Extended stats
         player.totalTrueTime += (trueTime || 0);
         player.totalKeystrokes += (totalKeystrokes || 0);
@@ -376,6 +387,7 @@ function startGameLoop(roomId) {
         p.totalTrueTime = 0;
         p.totalKeystrokes = 0;
         p.correctKeystrokes = 0;
+        // Do NOT reset statsHistory here, to persist handicap data across matches
     });
 
     nextWord(roomId);
@@ -408,45 +420,60 @@ function nextWord(roomId) {
     // Handicap Calculation
     // Only applies if Handicap Setting is ON
     if (room.settings.handicap) {
-        // Find fastest KPM
-        let maxKpm = 0;
-        room.players.forEach(p => { if (p.kpm > maxKpm) maxKpm = p.kpm; });
+        // Calculate averages for all players
+        const playerStats = room.players.map(p => {
+            if (p.statsHistory.length === 0) return { id: p.id, avgKpm: 0, avgReaction: 500 };
+            const sumKpm = p.statsHistory.reduce((a, b) => a + b.kpm, 0);
+            const sumReaction = p.statsHistory.reduce((a, b) => a + b.reaction, 0);
+            return {
+                id: p.id,
+                avgKpm: sumKpm / p.statsHistory.length,
+                avgReaction: sumReaction / p.statsHistory.length
+            };
+        });
+
+        // Find fastest Avg KPM
+        let maxAvgKpm = 0;
+        playerStats.forEach(ps => { if (ps.avgKpm > maxAvgKpm) maxAvgKpm = ps.avgKpm; });
 
         // Calculate delay for each player
-        // Estimated keys needed ~ word text length * 1.7 (kana avg) or use actual kana length
         const charLen = room.currentWord.kana.length; // Approximate
 
-        room.players.forEach(p => {
-            const playerKpm = p.kpm || 100; // default assumption if 0
-            if (playerKpm < 1) { // Not played yet 
+        playerStats.forEach(ps => {
+            if (ps.avgKpm < 1) {
                 // No handicap for initial round or slow players
-                io.to(p.id).emit('newWord', { word: room.currentWord, delay: 0 });
+                io.to(ps.id).emit('newWord', { word: room.currentWord, delay: 0 });
             } else {
-                // Let's find SLOWEST player.
-                let minKpm = 9999;
-                room.players.forEach(op => { if (op.kpm > 0 && op.kpm < minKpm) minKpm = op.kpm; });
-                if (minKpm === 9999) minKpm = playerKpm;
+                // Determine handicap relative to the fastest player?
+                // Actually the standard logic is usually "Handicap everyone to the Slowest player's level" 
+                // OR "Handicap the FASTEST players to match the SLOWEST".
+                // The previous logic seemed to try "Handicap THIS player if they are faster than the SLOWEST".
+                // Let's stick to: Make everyone finish at the same time as the SLOWEST player (ideal fair match).
 
-                if (minKpm < playerKpm) {
-                    // Time calculation with Reaction Time
-                    // Predicted Time = (Len / KPS) + ReactionTime
+                let minAvgKpm = 9999;
+                playerStats.forEach(ops => { if (ops.avgKpm > 0 && ops.avgKpm < minAvgKpm) minAvgKpm = ops.avgKpm; });
 
-                    const kpsFast = playerKpm / 60;
-                    const kpsSlow = minKpm / 60;
+                // If everyone is 0, min is 9999, so reset
+                if (minAvgKpm === 9999) minAvgKpm = ps.avgKpm;
 
-                    const reactionFast = p.reactionTime || 500; // ms
-                    // Ideally we find the SPECIFIC slow player who is minKpm. 
-                    const slowPlayerObj = room.players.find(sp => sp.kpm === minKpm) || { reactionTime: 500 };
+                // If I am faster than the slowest player, I get a delay.
+                if (minAvgKpm < ps.avgKpm) {
+                    // Time calculation
+                    const kpsFast = ps.avgKpm / 60;
+                    const kpsSlow = minAvgKpm / 60;
 
-                    // Note: reactionTime is in ms. (Len/KPS) is in seconds.
+                    const reactionFast = ps.avgReaction || 500;
+                    // We need the reaction time of the slowest player too
+                    const slowPlayerStat = playerStats.find(s => Math.abs(s.avgKpm - minAvgKpm) < 0.01) || { avgReaction: 500 };
+
                     const fastTimeMs = (charLen / kpsFast) * 1000 + reactionFast;
-                    const slowTimeMs = (charLen / kpsSlow) * 1000 + (slowPlayerObj.reactionTime || 500);
+                    const slowTimeMs = (charLen / kpsSlow) * 1000 + slowPlayerStat.avgReaction;
 
                     const delay = Math.max(0, Math.min(5000, slowTimeMs - fastTimeMs));
 
-                    io.to(p.id).emit('newWord', { word: room.currentWord, delay: delay });
+                    io.to(ps.id).emit('newWord', { word: room.currentWord, delay: delay });
                 } else {
-                    io.to(p.id).emit('newWord', { word: room.currentWord, delay: 0 });
+                    io.to(ps.id).emit('newWord', { word: room.currentWord, delay: 0 });
                 }
             }
         });
