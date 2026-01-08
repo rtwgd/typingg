@@ -334,6 +334,13 @@ io.on('connection', (socket) => {
         if (player.totalTime > 0) {
             player.kpm = (player.totalChars / player.totalTime) * 60;
         }
+
+        // Push partial stats to history if meaningful
+        // If charCount is 0, KPM is 0, which is valid (they did nothing)
+        // But invalid reaction time?
+        const currentKpm = timeTaken > 0 ? (charCount / timeTaken) * 60 : 0;
+        player.statsHistory.push({ kpm: currentKpm, reaction: reactionTime });
+        if (player.statsHistory.length > 5) player.statsHistory.shift();
     });
 
     socket.on('disconnect', () => {
@@ -420,62 +427,50 @@ function nextWord(roomId) {
     // Handicap Calculation
     // Only applies if Handicap Setting is ON
     if (room.settings.handicap) {
-        // Calculate averages for all players
-        const playerStats = room.players.map(p => {
-            if (p.statsHistory.length === 0) return { id: p.id, avgKpm: 0, avgReaction: 500 };
-            const sumKpm = p.statsHistory.reduce((a, b) => a + b.kpm, 0);
-            const sumReaction = p.statsHistory.reduce((a, b) => a + b.reaction, 0);
-            return {
-                id: p.id,
-                avgKpm: sumKpm / p.statsHistory.length,
-                avgReaction: sumReaction / p.statsHistory.length
-            };
+        // Estimate keystrokes for the current word
+        const estKeys = estimateKeystrokes(room.currentWord.kana);
+
+        // Calculate Projected Time for each player
+        // We assume valid stats exist for at least one player? 
+        // If a player has NO history, we assume they are "Average/Fast" (so we don't delay others unnecessarily)
+        // or we ignore them for the "Max Time" calculation (risk: they lose due to no handicap help).
+        // Let's assume a default decent speed (300 KPM) and reaction (500ms) for new players.
+
+        const projections = room.players.map(p => {
+            let avgKpm = 300;
+            let avgReaction = 500;
+
+            if (p.statsHistory.length > 0) {
+                const sumKpm = p.statsHistory.reduce((a, b) => a + b.kpm, 0);
+                const sumReaction = p.statsHistory.reduce((a, b) => a + b.reaction, 0);
+                avgKpm = sumKpm / p.statsHistory.length;
+                avgReaction = sumReaction / p.statsHistory.length;
+            }
+
+            // Safety clamp
+            if (avgKpm < 10) avgKpm = 10; // Avoid divide by zero or infinite time
+
+            const kps = avgKpm / 60;
+            // Predicted execution time + reaction time
+            const timeMs = (estKeys / kps) * 1000 + avgReaction;
+
+            return { id: p.id, timeMs };
         });
 
-        // Find fastest Avg KPM
-        let maxAvgKpm = 0;
-        playerStats.forEach(ps => { if (ps.avgKpm > maxAvgKpm) maxAvgKpm = ps.avgKpm; });
+        // Find the SLOWEST projected time (Max Time)
+        // We want everyone to finish at this time.
+        const maxTime = Math.max(...projections.map(p => p.timeMs));
 
-        // Calculate delay for each player
-        const charLen = room.currentWord.kana.length; // Approximate
-
-        playerStats.forEach(ps => {
-            if (ps.avgKpm < 1) {
-                // No handicap for initial round or slow players
-                io.to(ps.id).emit('newWord', { word: room.currentWord, delay: 0 });
-            } else {
-                // Determine handicap relative to the fastest player?
-                // Actually the standard logic is usually "Handicap everyone to the Slowest player's level" 
-                // OR "Handicap the FASTEST players to match the SLOWEST".
-                // The previous logic seemed to try "Handicap THIS player if they are faster than the SLOWEST".
-                // Let's stick to: Make everyone finish at the same time as the SLOWEST player (ideal fair match).
-
-                let minAvgKpm = 9999;
-                playerStats.forEach(ops => { if (ops.avgKpm > 0 && ops.avgKpm < minAvgKpm) minAvgKpm = ops.avgKpm; });
-
-                // If everyone is 0, min is 9999, so reset
-                if (minAvgKpm === 9999) minAvgKpm = ps.avgKpm;
-
-                // If I am faster than the slowest player, I get a delay.
-                if (minAvgKpm < ps.avgKpm) {
-                    // Time calculation
-                    const kpsFast = ps.avgKpm / 60;
-                    const kpsSlow = minAvgKpm / 60;
-
-                    const reactionFast = ps.avgReaction || 500;
-                    // We need the reaction time of the slowest player too
-                    const slowPlayerStat = playerStats.find(s => Math.abs(s.avgKpm - minAvgKpm) < 0.01) || { avgReaction: 500 };
-
-                    const fastTimeMs = (charLen / kpsFast) * 1000 + reactionFast;
-                    const slowTimeMs = (charLen / kpsSlow) * 1000 + slowPlayerStat.avgReaction;
-
-                    const delay = Math.max(0, Math.min(5000, slowTimeMs - fastTimeMs));
-
-                    io.to(ps.id).emit('newWord', { word: room.currentWord, delay: delay });
-                } else {
-                    io.to(ps.id).emit('newWord', { word: room.currentWord, delay: 0 });
-                }
+        room.players.forEach(p => {
+            const proj = projections.find(x => x.id === p.id);
+            let delay = 0;
+            if (proj) {
+                delay = maxTime - proj.timeMs;
             }
+            // Cap delay to 5 seconds to prevent griefing/bugs
+            delay = Math.min(5000, Math.max(0, delay));
+
+            io.to(p.id).emit('newWord', { word: room.currentWord, delay: delay });
         });
     } else {
         io.to(roomId).emit('newWord', { word: room.currentWord, delay: 0 });
@@ -486,3 +481,27 @@ const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
     console.log(`Server running on port ${PORT}`);
 });
+
+function estimateKeystrokes(kanaArray) {
+    let count = 0;
+    const vowels = ['あ', 'い', 'う', 'え', 'お', 'ん', 'ー', '、', '。', '！', '？'];
+
+    for (let i = 0; i < kanaArray.length; i++) {
+        const char = kanaArray[i];
+        const next = kanaArray[i + 1];
+
+        // Small kana combination
+        if (next && ['ゃ', 'ゅ', 'ょ', 'ぁ', 'ぃ', 'ぅ', 'ぇ', 'ぉ'].includes(next)) {
+            count += 3; // "kya" (3)
+            i++;
+        } else if (char === 'っ') {
+            count += 1; // "tt" -> 1 effective extra key
+        } else if (vowels.includes(char)) {
+            if (char === 'ん') count += 2; // "nn"
+            else count += 1;
+        } else {
+            count += 2; // "ka"
+        }
+    }
+    return count;
+}
