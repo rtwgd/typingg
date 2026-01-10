@@ -58,7 +58,8 @@ const ui = {
     chatInput: document.getElementById('chatInput'),
     btnSendChat: document.getElementById('btnSendChat'),
     // Result Elements
-    resultList: document.getElementById('resultList')
+    resultList: document.getElementById('resultList'),
+    btnForceEnd: document.getElementById('btnForceEnd')
 };
 
 // --- Helper Functions ---
@@ -459,6 +460,14 @@ class TypingEngine {
 }
 const typer = new TypingEngine();
 
+ui.btnForceEnd.addEventListener('click', () => {
+    if (isHost && currentRoomId) {
+        if (confirm('本当に試合を強制終了しますか？')) {
+            socket.emit('forceEndGame', { roomId: currentRoomId });
+        }
+    }
+});
+
 
 // --- Socket Events ---
 socket.on('connect', () => console.log('Connected'));
@@ -478,7 +487,22 @@ socket.on('joinSuccess', ({ roomState }) => {
 });
 
 socket.on('playerJoined', ({ roomState }) => updateLobby(roomState));
-socket.on('playerLeft', ({ roomState }) => updateLobby(roomState));
+socket.on('playerLeft', ({ roomState }) => {
+    isHost = roomState.players.find(p => p.id === socket.id)?.isHost || false;
+
+    // If we are in a game, just update the necessary parts, don't switch screen
+    if (screens.game.classList.contains('active')) {
+        if (isHost) {
+            ui.btnForceEnd.style.display = 'block';
+        } else {
+            ui.btnForceEnd.style.display = 'none';
+        }
+        renderScoreboard(roomState.players);
+    } else {
+        // Otherwise, we are in the lobby, so do the full update.
+        updateLobby(roomState);
+    }
+});
 
 socket.on('settingsUpdated', ({ settings }) => {
     ui.winCount.value = settings.winCount;
@@ -502,6 +526,9 @@ window.kickPlayer = (targetId) => {
 };
 
 socket.on('gameStarting', ({ count, players }) => {
+    if (isHost) {
+        ui.btnForceEnd.style.display = 'block';
+    }
     ui.countdownInfo.style.display = 'flex';
     ui.countdownVal.textContent = count;
     ui.feedback.classList.remove('show'); // Clear previous 'GET!'
@@ -631,10 +658,18 @@ socket.on('wordSucccess', ({ winnerName, winnerId, scores }) => {
     overlay.style.color = (winnerId === socket.id) ? 'var(--success-color)' : 'var(--error-color)';
 });
 
-socket.on('gameFinished', ({ winner, players }) => {
+socket.on('gameFinished', ({ winner, players, forcedByHost }) => {
+    ui.btnForceEnd.style.display = 'none';
     setTimeout(() => {
         showScreen('result');
-        document.getElementById('winnerName').textContent = winner.name;
+        if (forcedByHost) {
+            document.getElementById('winnerName').textContent = '強制終了';
+        } else if (winner) {
+            document.getElementById('winnerName').textContent = winner.name;
+        } else {
+            document.getElementById('winnerName').textContent = '試合終了'; // Fallback
+        }
+
 
         ui.resultList.innerHTML = ''; // Ensure clean slate
 
@@ -644,7 +679,7 @@ socket.on('gameFinished', ({ winner, players }) => {
         players.forEach(p => {
             const stats = p.finalStats || {};
             const tr = document.createElement('tr');
-            if (p.id === winner.id) tr.className = 'result-winner-row';
+            if (!forcedByHost && winner && p.id === winner.id) tr.className = 'result-winner-row';
 
             tr.innerHTML = `
                 <td>${p.name}</td>
@@ -661,6 +696,7 @@ socket.on('gameFinished', ({ winner, players }) => {
 });
 
 socket.on('gameReset', ({ roomState }) => {
+    ui.btnForceEnd.style.display = 'none';
     currentWord = null;
     showScreen('lobby');
     updateLobby(roomState);

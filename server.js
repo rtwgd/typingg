@@ -343,6 +343,40 @@ io.on('connection', (socket) => {
         if (player.statsHistory.length > 5) player.statsHistory.shift();
     });
 
+    socket.on('forceEndGame', ({ roomId }) => {
+        const room = rooms[roomId];
+        // 1. Check if room exists and sender is the host
+        if (!room || room.hostId !== socket.id) {
+            return;
+        }
+        // 2. Check if game is actually in progress
+        if (room.status !== 'playing' && room.status !== 'countdown') {
+            return;
+        }
+
+        room.status = 'finished';
+
+        // Calculate final stats for all players up to that point
+        room.players.forEach(p => {
+            p.finalStats = {
+                score: p.score,
+                totalTime: p.totalTime,
+                totalChars: p.totalChars,
+                kpm: p.totalTime > 0 ? (p.totalChars / p.totalTime) * 60 : 0,
+                trueKpm: p.totalTrueTime > 0 ? (p.totalChars / p.totalTrueTime) * 60 : 0,
+                avgReaction: p.reactionCount > 0 ? (p.reactionTime / p.reactionCount) : 0,
+                accuracy: p.totalKeystrokes > 0 ? (p.correctKeystrokes / p.totalKeystrokes) * 100 : 0
+            };
+        });
+
+        // 3. Broadcast a specific event
+        io.to(roomId).emit('gameFinished', {
+            winner: null, // No winner
+            players: room.players,
+            forcedByHost: true // Special flag
+        });
+    });
+
     socket.on('disconnect', () => {
         for (const rId in rooms) {
             const room = rooms[rId];
